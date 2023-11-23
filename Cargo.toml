@@ -1,0 +1,17 @@
+workspace = { members = ["cli"] }
+[package]
+name = "assetchunk"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+name = "assetchunk"
+crate-type = ["cdylib"]
+
+
+[dependencies]
+serde = { version = "1.0.193", features = ["derive"] }
+serde_json = "1.0.108"
+toml = "0.8.8"
