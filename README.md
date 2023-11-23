@@ -8,14 +8,7 @@ The assets that can be packaged include images, audio files, fonts, shaders, mod
 
 ## Usage 🛠
 
-### Loading an Asset From a File
-
-To load an asset from a file, use the `load` function, providing the file path, asset name, and asset type. This function reads the file data into a byte vector and creates an `Asset` instance.
-
-```rust
-rust let asset = Asset::load("path/to/asset", "asset_name", AssetType::Image);
-```
-
+It a super work in progress right now, I just started this. I don't expect anybody to actually use this its really just a fun project for me work on and get better at memory management and Rusts FFI to C capabilities.
 
 ### Asset Manipulation
 
