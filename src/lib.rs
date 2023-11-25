@@ -9,13 +9,13 @@ use std::str::FromStr;
 
 #[derive(Serialize, Deserialize, Debug)]
 pub enum AssetType {
-    Image,
-    Audio,
-    Font,
-    Shader,
-    Model,
-    Script,
-    Other,
+    Image(String),
+    Audio(String),
+    Font(String),
+    Shader(String),
+    Model(String),
+    Script(String),
+    Other(String),
 }
 
 
@@ -92,6 +92,12 @@ impl Asset {
         &self.asset_type
     }
 
+    /**
+     * Set Asset Type
+     */
+    pub fn set_type(&mut self, asset_type:AssetType) {
+        self.asset_type = asset_type;
+    }
 
 
 }
@@ -196,6 +202,7 @@ impl AssetManifest {
  *  
  */
 #[repr(C)]
+#[derive(Debug,Clone, Copy)]
 pub struct RawCAsset {
     pub data: *mut c_void,
     pub location: usize,
@@ -207,8 +214,9 @@ pub struct RawCAsset {
  * API: - Represents The Asset Manifest
  */
 #[repr(C)]
+#[derive(Debug,Clone)]
 pub struct RawCAssetManifest {
-    pub assets: *mut RawCAsset,
+    pub assets: *mut *mut RawCAsset, // Remember This is an array of assets (pointers)
     pub asset_count: usize,
 }
 
@@ -216,10 +224,11 @@ pub struct RawCAssetManifest {
  * API: - Represents The Asset Chunk
  */
 #[repr(C)]
+#[derive(Debug,Clone, Copy)]
 pub struct RawCAssetChunk {
     pub data: *mut c_void,
     pub size: usize,
-    pub manifest: RawCAssetManifest,
+    pub manifest: *mut RawCAssetManifest,
 }
 
 
@@ -279,7 +288,9 @@ pub extern "C" fn load_asset_manifest(filepath:*const c_char) -> *mut RawCAssetM
         }
 
         let raw_assets_len = raw_assets.len();
-        let raw_assets_ptr = raw_assets.as_mut_ptr();
+        let mut raw_ptr_vec:Vec<*mut RawCAsset> = raw_assets.iter_mut().map(|asset| asset as *mut RawCAsset).collect();
+        let raw_assets_ptr = raw_ptr_vec.as_mut_ptr();
+        
 
         std::mem::forget(raw_assets);
 
@@ -333,16 +344,61 @@ pub extern "C" fn load_asset_chunk(filepath_chunk:*const c_char, filepath_manife
     }
 
     let manifest_path = PathBuf::from_str(manifest_str).unwrap();
+    let manifest_path_str = manifest_path.to_str().unwrap();
+    let manifest_c_str = CString::new(manifest_path_str).unwrap().into_raw();
+    let manifest_data = load_asset_manifest(manifest_c_str);
 
     let raw_chunk = RawCAssetChunk {
         data: boxed_chunk_data.as_ptr() as *mut c_void,
         size: chunk_data_len,
-        manifest: RawCAssetManifest {
-            assets: std::ptr::null_mut(),
-            asset_count: 0,
-        },
+        manifest: manifest_data
     };
 
     return Box::into_raw(Box::new(raw_chunk));   
+
+}
+
+
+#[no_mangle]
+pub extern "C" fn get_asset(asset_chunk:*const RawCAssetChunk, name:*const c_char) -> *mut RawCAsset {
+
+    let rust_asset_chunk: Box<RawCAssetChunk> = unsafe { Box::from_raw(asset_chunk as *mut RawCAssetChunk) };
+    
+    let rust_asset_manifest: Box<RawCAssetManifest> = unsafe { Box::from_raw(rust_asset_chunk.manifest as *mut RawCAssetManifest) };
+
+
+    // Okay lets get the vector of assets back from the struct C sent us.
+    let asset_slice = unsafe {
+        std::slice::from_raw_parts_mut(rust_asset_manifest.assets, rust_asset_manifest.asset_count)
+    };
+    let asset_vec:Vec<RawCAsset> = asset_slice.iter_mut().map(|&mut ptr| unsafe{*ptr}).collect();
+
+    // Now we can get the asset we want
+    let asset_name = unsafe {
+        CStr::from_ptr(name).to_str().unwrap()
+    };
+
+    let asset = asset_vec.iter().find(|asset| {
+        let asset_name_str = unsafe {
+            CStr::from_ptr(asset.name).to_str().unwrap()
+        };
+        asset_name_str == asset_name
+    });
+
+    if asset.is_none() {
+        println!("[-] Error: Asset Not Found: {}", asset_name);
+        return std::ptr::null_mut();
+    }
+
+    println!("Asset Found: {:?}", asset.unwrap());
+
+    // TODO: Do this better or something
+    // Im cloning to shut the compiler up.
+    let mut asset = asset.unwrap().clone();
+    asset.data = unsafe {rust_asset_chunk.data.offset(asset.location as isize) as *mut c_void};
+    println!("Asset Data Pointer: {:?}", asset.data);
+
+    let raw_asset = Box::new(asset.clone());
+    Box::into_raw(raw_asset)
 
 }

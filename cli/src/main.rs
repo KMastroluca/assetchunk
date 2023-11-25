@@ -1,10 +1,10 @@
 
 mod pack;
 
-extern crate assetchunk;
 
 // Asset Chunk Library
-use assetchunk::{Asset, AssetType, AssetManifest};
+use assetchunk::AssetManifest;
+use pack::print_manifest_contents;
 
 use std::path::PathBuf;
 
@@ -34,6 +34,12 @@ enum Commands {
     },
 
     #[command(arg_required_else_help = true)]
+    List {
+        #[clap(value_hint = ValueHint::FilePath)]
+        asset_manifest_load_path: Option<PathBuf>,
+    },
+
+    #[command(arg_required_else_help = true)]
     Test {
         #[clap(short = 'l', long = "load", value_hint = ValueHint::FilePath)]
         asset_file_load_path: Option<PathBuf>,
@@ -51,6 +57,13 @@ fn main() {
     let args = CLI::parse();
 
     match args.command {
+        Commands::List {asset_manifest_load_path} => {
+            if asset_manifest_load_path.is_none() {
+                println!("No Asset Manifest Load Path Specified");
+                return;
+            }
+            print_manifest_contents(asset_manifest_load_path.unwrap());
+        },
         Commands::Pack { input_dir, output_path } => {
             pack::pack(input_dir, output_path);
         },

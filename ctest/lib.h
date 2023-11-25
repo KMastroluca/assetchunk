@@ -27,6 +27,7 @@ typedef struct RawCAssetChunk {
 
 
 extern "C" RawCAssetManifest* load_asset_manifest(const char *filepath);
-extern "C" RawCAssetChunk* load_asset_chunk(const char *filepath);
+extern "C" RawCAssetChunk* load_asset_chunk(const char *filepath_chunk, const char* filepath_manifest);
+extern "C" RawCAsset* get_asset(RawCAssetChunk *asset_chunk, const char *name);
 
 
