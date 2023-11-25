@@ -4,7 +4,6 @@ use assetchunk::AssetType;
 use assetchunk::AssetManifest;
 
 
-use file_format::{FileFormat, Kind};
 use std::path::PathBuf;
 use std::fs::write;
 
@@ -19,6 +18,11 @@ pub fn pack(input_dir:Option<PathBuf>, output_path:Option<PathBuf>) {
       // Load the assets from the input directory into an array of assets
       println!("[+] Loading Assets...");
       let assets = load_assets(input_dir);
+      if assets.is_none() {
+            eprintln!("[-] Error: Failed To Load Assets.");
+            return;
+      }
+      let assets = assets.unwrap();
       println!("[+] Loaded {} Assets", assets.len());
       
       // Create a new asset manifest from asset array
@@ -38,7 +42,7 @@ pub fn pack(input_dir:Option<PathBuf>, output_path:Option<PathBuf>) {
             return;
       }
 
-      println!("[+] Chunk Size: {} Bytes", chunk.len());
+      println!("[+] Chunk Size: {} Bytes / {} KB / {} MB", chunk.len(), chunk.len() / 1024, chunk.len() / (1024 * 1024));
       println!("[+] Chunk Packed Successfully!");
 
       let chunk_path = PathBuf::from(output_path.clone().unwrap());
@@ -58,10 +62,10 @@ pub fn pack(input_dir:Option<PathBuf>, output_path:Option<PathBuf>) {
       let write_result = write( new_chunk_path, chunk);
       match write_result {
             Ok(_) => {
-               println!("Chunk Written Successfully!")
+               println!("[+] Chunk Written Successfully!")
             },
             Err(e) => {
-                  println!("Error: Failed To Write Chunk To File: {:?}", e);
+                  println!("[-] Error: Failed To Write Chunk To File: {:?}", e);
                   return;
             }
       }
@@ -69,7 +73,7 @@ pub fn pack(input_dir:Option<PathBuf>, output_path:Option<PathBuf>) {
       //println!("[+] Writing Manifest To File: {:?}", );
       manifest.write(new_manifest_path.to_str().unwrap());
 
-      println!("Assets Packed Successfully!");
+      println!("[+] Assets Packed Successfully!");
 
 
 }
@@ -77,9 +81,14 @@ pub fn pack(input_dir:Option<PathBuf>, output_path:Option<PathBuf>) {
 /**
  * Load assets from a directory into an array of assets
  */
-pub fn load_assets(input_dir:Option<PathBuf>) -> Vec<Asset> {
+pub fn load_assets(input_dir:Option<PathBuf>) -> Option<Vec<Asset>> {
       let mut assets:Vec<Asset> = Vec::new();
       let input_dir = input_dir.unwrap();
+      if input_dir.is_dir() == false {
+            eprintln!("[-] Error: Input Directory Does Not Exist. {:?}", input_dir);
+            eprintln!("[-] Current Working Directory: {:?}", std::env::current_dir().unwrap());
+            return None;
+      }
       for entry in std::fs::read_dir(input_dir).unwrap() {
             let entry = entry.unwrap();
             let path = entry.path();
@@ -89,21 +98,7 @@ pub fn load_assets(input_dir:Option<PathBuf>) -> Vec<Asset> {
             let asset = Asset::load(path.to_str().unwrap(), file_name, asset_type);
             assets.push(asset);
       }
-      assets
-}
-
-/**
- * Identify Assets After The Data Has Been Loaded
- */
-pub fn identify_assets(assets:&mut Vec<Asset>) {
-      println!("[+] Identifying Assets...");
-      for asset in assets {
-            println!("[+] Identifying Asset: {}", asset.get_name());
-            let asset_data = asset.get_data().as_deref().expect("[-] Error While Identifying Asset: Asset Data Doesnt Exist.");
-            let asset_type = identify_asset(asset_data);
-            asset.set_type(asset_type);
-      }
-      println!("[+] Assets Identified Successfully!");
+      Some(assets)
 }
 
 
@@ -132,108 +127,20 @@ pub fn print_manifest_contents(manifest_path:PathBuf) {
       let assets = manifest.get_assets_mut();
 
 
-      println!("Chunk Contents:");
+      println!("[+]Chunk Contents:");
       for asset in assets {
-            println!("Asset Name: {}", asset.get_name());
-            println!("Asset Type: {:?}", asset.get_type());
-            println!("Asset Size: {} Bytes", asset.get_size());
-            println!("Asset Offset: {} Bytes", asset.get_chunk_location());
-            println!("Asset Data: {:?}", asset.get_data());
+            println!("[|]- Asset Name: {}", asset.get_name());
+            println!("[|]- Asset Type: {:?}", asset.get_type());
+            println!("[|]- Asset Size: {} Bytes / {} MB", asset.get_size(), asset.get_size() / (1024 * 1024));
+            println!("[|]- Asset Offset: {} Bytes", asset.get_chunk_location());
+            println!("[|]- Asset Data: {:?}", asset.get_data());
       }
 }
 
 
 
 
-/**
- * This function identifies the asset type based on the makeup of the file.
- * It uses the file format crate to identify the file type.
- * ---
- * This may not exactly work all the way for all file types, but it should work for most.
- * It will be updated as needed.
- */
-pub fn identify_asset(data:&[u8]) -> AssetType {
-   let format = FileFormat::from_bytes(data);
-   match format.kind() {
-      Kind::Image => {
-         match format.short_name() {
-            Some("PNG") | Some("png") => AssetType::Image("PNG".to_string()),
-            Some("JPG") | Some("jpg") => AssetType::Image("JPG".to_string()),
-            Some("JPEG") | Some("jpeg") => AssetType::Image("JPEG".to_string()),
-            Some("GIF") | Some("gif") => AssetType::Image("GIF".to_string()),
-            Some("BMP") | Some("bmp") => AssetType::Image("BMP".to_string()),
-            Some("WEBP") | Some("webp") => AssetType::Image("WEBP".to_string()),
-            Some("ICO") | Some("ico") => AssetType::Image("ICO".to_string()),
-            Some("TIFF") | Some("tiff") => AssetType::Image("TIFF".to_string()),
-            Some("PICT") | Some("pict") => AssetType::Image("PICT".to_string()),
-            Some("PSD") | Some("psd") => AssetType::Image("PSD".to_string()),
-            Some("SVG") | Some("svg") => AssetType::Image("SVG".to_string()),
-            Some(_) => AssetType::Other("IMAGE".to_string()), // Supply A Generic Name For The Image Type
-            None => AssetType::Other("IMAGE".to_string()),
-         }
-      },
-      Kind::Audio => {
-         match format.short_name() {
-            Some("MP3") | Some("mp3") => AssetType::Audio("MP3".to_string()),
-            Some("WAV") | Some("wav") => AssetType::Audio("WAV".to_string()),
-            Some("AIFF") | Some("aiff") => AssetType::Audio("AIFF".to_string()),
-            Some("FLAC") | Some("flac") => AssetType::Audio("FLAC".to_string()),
-            Some("OGG") | Some("ogg") => AssetType::Audio("OGG".to_string()),
-            Some("MIDI") | Some("midi") => AssetType::Audio("MIDI".to_string()),
-            Some("AAC") | Some("aac") => AssetType::Audio("AAC".to_string()),
-            Some("WMA") | Some("wma") => AssetType::Audio("WMA".to_string()),
-            Some("3GP") | Some("3gp") => AssetType::Audio("3GP".to_string()),
-            Some(_) => AssetType::Other("AUDIO".to_string()),
-            None => AssetType::Other("AUDIO".to_string()),
-         }
-      },
-      Kind::Model => {
-         match format.short_name() {
-            Some("OBJ") | Some("obj") => AssetType::Model("OBJ".to_string()),
-            Some("FBX") | Some("fbx") => AssetType::Model("FBX".to_string()),
-            Some("MAX") | Some("max") => AssetType::Model("MAX".to_string()),
-            Some("3DS") | Some("3ds") => AssetType::Model("3DS".to_string()),
-            Some("C4D") | Some("c4d") => AssetType::Model("C4D".to_string()),
-            Some("BLEND") | Some("blend") => AssetType::Model("BLEND".to_string()),
-            Some("MAYA") | Some("maya") => AssetType::Model("MAYA".to_string()),
-            Some(_) => AssetType::Other("MODEL".to_string()),
-            None => AssetType::Other("MODEL".to_string()),
-         }
-      },
-      Kind::Text => {
-         match format.short_name() {
-            Some("SHADER") | Some("shader") => AssetType::Shader("SHADER".to_string()),
-            Some("GLSL") | Some("glsl") => AssetType::Shader("GLSL".to_string()),
-            Some("HLSL") | Some("hlsl") => AssetType::Shader("HLSL".to_string()),
-            Some("CGFX") | Some("cgfx") => AssetType::Shader("CGFX".to_string()),
-            Some("FX") | Some("fx") => AssetType::Shader("FX".to_string()),
 
-            Some("JS") | Some("js") => AssetType::Script("JS".to_string()),
-            Some("PY") | Some("py") => AssetType::Script("PY".to_string()),
-            Some("LUA")| Some("lua") => AssetType::Script("LUA".to_string()),
-            Some("VB") | Some("vb") => AssetType::Script("VB".to_string()),
-
-            // For Dialog Scripts
-            Some("SCRIPT") | Some("script") => AssetType::Script("SCRIPT".to_string()),     
-            Some(_) => AssetType::Other("TEXT".to_string()),
-            None => AssetType::Other("TEXT".to_string()),  
-         }
-      },
-      Kind::Font => {
-         match format.short_name() {
-            Some("TTF") | Some("ttf") => AssetType::Font("TTF".to_string()),
-            Some("OTF") | Some("otf") => AssetType::Font("OTF".to_string()),
-            Some("WOFF")| Some("woff") => AssetType::Font("WOFF".to_string()),
-            Some("WOFF2")| Some("woff2") => AssetType::Font("WOFF2".to_string()),
-            Some("EOT") | Some("eot") => AssetType::Font("EOT".to_string()),
-            Some("SVG") | Some("svg") => AssetType::Font("SVG".to_string()),
-            Some(_) => AssetType::Other("FONT".to_string()),
-            None => AssetType::Other("FONT".to_string()),
-         }
-      },
-      _ => AssetType::Other("UNIDENTIFIED".to_string()),
-   }
-}
 
 
 /**
@@ -250,7 +157,6 @@ pub fn pack_assets(assets: &mut Vec<Asset>) -> Vec<u8> {
             let asset_size = asset.get_size();
             println!("Asset Size: {}", asset_size);
             let asset_data = asset.get_data();
-            println!("Asset Data: {:?}", asset_data);
             if asset_data.is_none() {
                   println!("Error: Asset Data Doesnt Exist.");
                   return Vec::new();
