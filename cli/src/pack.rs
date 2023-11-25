@@ -13,8 +13,9 @@ use std::fs::write;
  */
 pub fn pack(input_dir:Option<PathBuf>, output_path:Option<PathBuf>) {
       
-      println!("Packing Assets Into Chunk...");
-
+      println!("[+] Packing Assets Into Chunk...");
+      println!("[+] Input Directory: {:?}", input_dir);
+      println!("[|]---------------------------------------------[|]");
       // Load the assets from the input directory into an array of assets
       println!("[+] Loading Assets...");
       let assets = load_assets(input_dir);
@@ -31,7 +32,6 @@ pub fn pack(input_dir:Option<PathBuf>, output_path:Option<PathBuf>) {
 
 
       // Pack the assets into a contiguous chunk of memory
-      println!("[+] Packing Assets Into Chunk...");
       let chunk = pack_assets(manifest.get_assets_mut());
       
       
@@ -128,18 +128,16 @@ pub fn print_manifest_contents(manifest_path:PathBuf) {
 
 
       println!("[+]Chunk Contents:");
+      println!("[|]------------------------------------------------------------[|]");
       for asset in assets {
             println!("[|]- Asset Name: {}", asset.get_name());
             println!("[|]- Asset Type: {:?}", asset.get_type());
-            println!("[|]- Asset Size: {} Bytes / {} MB", asset.get_size(), asset.get_size() / (1024 * 1024));
+            println!("[|]- Asset Size: {} Bytes / {} MB", asset.get_size(), (asset.get_size() as f32 / (1024 * 1024) as f32) as f32);
             println!("[|]- Asset Offset: {} Bytes", asset.get_chunk_location());
             println!("[|]- Asset Data: {:?}", asset.get_data());
+            println!("[|]------------------------------------------------------------[|]");
       }
 }
-
-
-
-
 
 
 
@@ -155,17 +153,17 @@ pub fn pack_assets(assets: &mut Vec<Asset>) -> Vec<u8> {
             asset.set_chunk_location(offset); // Set the location of the asset in the chunk at the beginnging
             // of the loop, so that it accurately reflects the offset of the asset in the chunk.
             let asset_size = asset.get_size();
-            println!("Asset Size: {}", asset_size);
+            println!("[+] Asset Size: {}", asset_size);
             let asset_data = asset.get_data();
             if asset_data.is_none() {
-                  println!("Error: Asset Data Doesnt Exist.");
+                  println!("[-] Error: Asset Data Doesnt Exist.");
                   return Vec::new();
             }
             // Extend the asset chunk using extend/into_iter
             let asset_data_slice = asset_data.as_ref().unwrap().as_slice(); // Finegling the bagel
             chunk.extend(asset_data_slice.into_iter());
             offset += asset_size; // Pointer arithmetic to get the offset of the next asset in the chunk
-            println!("Next Asset Offset: {}", offset);     
+            println!("[+] Next Asset Offset: {}", offset);     
       }
       chunk
 }

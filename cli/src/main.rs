@@ -1,16 +1,26 @@
 
 mod pack;
 
+mod term;
 
 // Asset Chunk Library
 use assetchunk::AssetManifest;
 use pack::print_manifest_contents;
 
+use std::io::Error;
 use std::path::PathBuf;
 
 use clap::Parser;
 use clap::Subcommand;
 use clap::ValueHint;
+
+// Some Crossterm Shit
+use crossterm::terminal::{EnterAlternateScreen, LeaveAlternateScreen};
+use crossterm::execute;
+use std::io::{stdout, Write};
+
+
+
 
 
 #[derive(Debug, Parser)]
@@ -52,20 +62,31 @@ enum Commands {
 
 }
 
-fn main() {
+fn main() -> std::io::Result<()> {
 
     let args = CLI::parse();
+
+    let mut stdout = std::io::stdout();
+
+    term::interactive_term(&mut stdout);
 
     match args.command {
         Commands::List {asset_manifest_load_path} => {
             if asset_manifest_load_path.is_none() {
-                println!("No Asset Manifest Load Path Specified");
-                return;
+                
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    format!("[-] No Asset Manifest File Specified.")
+                ));
+
+            } else {
+                print_manifest_contents(asset_manifest_load_path.unwrap());
+                return Ok(());
             }
-            print_manifest_contents(asset_manifest_load_path.unwrap());
         },
         Commands::Pack { input_dir, output_path } => {
             pack::pack(input_dir, output_path);
+            return Ok(());
         },
         Commands::Test { asset_file_load_path } => {
             let filedata = std::fs::read(asset_file_load_path.unwrap());
@@ -78,9 +99,11 @@ fn main() {
                     println!("{:?}", manifest);
                     manifest.load_asset_data("./out.chunk.asset");
                 }
+                return Ok(());
+            } else {
+                return Err(Error::new(std::io::ErrorKind::InvalidInput, "[-] Failed To Load Asset File From Disk."));
             }
+            
         }
     }
-
-
 }

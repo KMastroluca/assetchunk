@@ -1,3 +1,4 @@
+use file_format::{FileFormat, Kind};
 use serde::{Serialize, Deserialize};
 use std::ffi::{CStr, c_void, c_char, CString};
 use std::fs::{write, read};
@@ -179,8 +180,10 @@ impl AssetManifest {
                 println!("Asset: {:?} Size: {}", asset.get_name(), data.len());
                 asset.data = Some(data.to_vec());
             }
-
         }
+
+        // Identify Assets
+        identify_assets(self.assets.as_mut());
     }
 
 
@@ -195,6 +198,113 @@ impl AssetManifest {
 
 }
 
+/**
+ * Identify Assets After The Data Has Been Loaded
+ */
+pub fn identify_assets(assets:&mut Vec<Asset>) {
+    println!("[+] Identifying Assets...");
+    for asset in assets {
+          println!("[+] Identifying Asset: {}", asset.get_name());
+          let asset_data = asset.get_data().as_deref().expect("[-] Error While Identifying Asset: Asset Data Doesnt Exist.");
+          let asset_type = identify_asset(asset_data);
+          asset.set_type(asset_type);
+    }
+    println!("[+] Assets Identified Successfully!");
+}
+
+
+
+
+/**
+ * This function identifies the asset type based on the makeup of the file.
+ * It uses the file format crate to identify the file type.
+ * ---
+ * This may not exactly work all the way for all file types, but it should work for most.
+ * It will be updated as needed.
+ */
+pub fn identify_asset(data:&[u8]) -> AssetType {
+    let format = FileFormat::from_bytes(data);
+    println!("Format: {:?}", format);
+    match format.kind() {
+       Kind::Image => {
+          match format.short_name() {
+             Some("PNG") | Some("png") => AssetType::Image("PNG".to_string()),
+             Some("JPG") | Some("jpg") => AssetType::Image("JPG".to_string()),
+             Some("JPEG") | Some("jpeg") => AssetType::Image("JPEG".to_string()),
+             Some("GIF") | Some("gif") => AssetType::Image("GIF".to_string()),
+             Some("BMP") | Some("bmp") => AssetType::Image("BMP".to_string()),
+             Some("WEBP") | Some("webp") => AssetType::Image("WEBP".to_string()),
+             Some("ICO") | Some("ico") => AssetType::Image("ICO".to_string()),
+             Some("TIFF") | Some("tiff") => AssetType::Image("TIFF".to_string()),
+             Some("PICT") | Some("pict") => AssetType::Image("PICT".to_string()),
+             Some("PSD") | Some("psd") => AssetType::Image("PSD".to_string()),
+             Some("SVG") | Some("svg") => AssetType::Image("SVG".to_string()),
+             Some(_) => AssetType::Other("IMAGE".to_string()), // Supply A Generic Name For The Image Type
+             None => AssetType::Other("IMAGE".to_string()),
+          }
+       },
+       Kind::Audio => {
+          match format.short_name() {
+             Some("MP3") | Some("mp3") => AssetType::Audio("MP3".to_string()),
+             Some("WAV") | Some("wav") => AssetType::Audio("WAV".to_string()),
+             Some("AIFF") | Some("aiff") => AssetType::Audio("AIFF".to_string()),
+             Some("FLAC") | Some("flac") => AssetType::Audio("FLAC".to_string()),
+             Some("OGG") | Some("ogg") => AssetType::Audio("OGG".to_string()),
+             Some("MIDI") | Some("midi") => AssetType::Audio("MIDI".to_string()),
+             Some("AAC") | Some("aac") => AssetType::Audio("AAC".to_string()),
+             Some("WMA") | Some("wma") => AssetType::Audio("WMA".to_string()),
+             Some("3GP") | Some("3gp") => AssetType::Audio("3GP".to_string()),
+             Some(_) => AssetType::Other("AUDIO".to_string()),
+             None => AssetType::Other("AUDIO".to_string()),
+          }
+       },
+       Kind::Model => {
+          match format.short_name() {
+             Some("OBJ") | Some("obj") => AssetType::Model("OBJ".to_string()),
+             Some("FBX") | Some("fbx") => AssetType::Model("FBX".to_string()),
+             Some("MAX") | Some("max") => AssetType::Model("MAX".to_string()),
+             Some("3DS") | Some("3ds") => AssetType::Model("3DS".to_string()),
+             Some("C4D") | Some("c4d") => AssetType::Model("C4D".to_string()),
+             Some("BLEND") | Some("blend") => AssetType::Model("BLEND".to_string()),
+             Some("MAYA") | Some("maya") => AssetType::Model("MAYA".to_string()),
+             Some(_) => AssetType::Other("MODEL".to_string()),
+             None => AssetType::Other("MODEL".to_string()),
+          }
+       },
+       Kind::Text => {
+          match format.short_name() {
+             Some("SHADER") | Some("shader") => AssetType::Shader("SHADER".to_string()),
+             Some("GLSL") | Some("glsl") => AssetType::Shader("GLSL".to_string()),
+             Some("HLSL") | Some("hlsl") => AssetType::Shader("HLSL".to_string()),
+             Some("CGFX") | Some("cgfx") => AssetType::Shader("CGFX".to_string()),
+             Some("FX") | Some("fx") => AssetType::Shader("FX".to_string()),
+ 
+             Some("JS") | Some("js") => AssetType::Script("JS".to_string()),
+             Some("PY") | Some("py") => AssetType::Script("PY".to_string()),
+             Some("LUA")| Some("lua") => AssetType::Script("LUA".to_string()),
+             Some("VB") | Some("vb") => AssetType::Script("VB".to_string()),
+ 
+             // For Dialog Scripts
+             Some("SCRIPT") | Some("script") => AssetType::Script("SCRIPT".to_string()),     
+             Some(_) => AssetType::Other("TEXT".to_string()),
+             None => AssetType::Other("TEXT".to_string()),  
+          }
+       },
+       Kind::Font => {
+          match format.short_name() {
+             Some("TTF") | Some("ttf") => AssetType::Font("TTF".to_string()),
+             Some("OTF") | Some("otf") => AssetType::Font("OTF".to_string()),
+             Some("WOFF")| Some("woff") => AssetType::Font("WOFF".to_string()),
+             Some("WOFF2")| Some("woff2") => AssetType::Font("WOFF2".to_string()),
+             Some("EOT") | Some("eot") => AssetType::Font("EOT".to_string()),
+             Some("SVG") | Some("svg") => AssetType::Font("SVG".to_string()),
+             Some(_) => AssetType::Other("FONT".to_string()),
+             None => AssetType::Other("FONT".to_string()),
+          }
+       },
+       _ => AssetType::Other("UNIDENTIFIED".to_string()),
+    }
+ }
 
 
 /**
