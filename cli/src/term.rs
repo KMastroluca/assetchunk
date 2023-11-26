@@ -1,4 +1,8 @@
 use std::io;
+use std::sync::mpsc::Receiver;
+use std::sync::mpsc::Sender;
+use std::thread;
+use std::time::Duration;
 use crossterm::cursor;
 use crossterm::queue;
 use crossterm::style;
@@ -43,6 +47,12 @@ impl ScreenStack {
    }
 }
 
+
+pub struct InteractiveTermRecievers {
+   pub carat_blinker: Receiver<bool>,
+   pub event: Receiver<crossterm::event::Event>
+}
+
 const MENU: &str = r#" 
 +--------+-----+---------------------------------------------------------------------------+
 |  Menu  | Key |                                Description                                |
@@ -54,9 +64,10 @@ const MENU: &str = r#"
 "#;
 
 
-pub fn interactive_term<W>(w: &mut W) -> std::io::Result<()>
+pub fn interactive_term<W>(w: &mut W, recievers:&InteractiveTermRecievers) -> std::io::Result<()>
 where 
    W: io::Write, {
+
    let mut screen_stack = ScreenStack::new();
 
    execute!(w, EnterAlternateScreen).unwrap();
@@ -66,13 +77,13 @@ where
    loop {
       match screen_stack.peek() {
          Some(MenuState::Main) => {
-            if draw_main_menu(w, &mut screen_stack).is_err() {
+            if draw_main_menu(w, &mut screen_stack, recievers).is_err() {
                eprintln!("[-] Error drawing main menu");
                break;
             }
          },
          Some(MenuState::Pack) => {
-            if draw_pack_menu(w, &mut screen_stack).is_err() {
+            if draw_pack_menu(w, &mut screen_stack, recievers).is_err() {
                eprintln!("[-] Error drawing pack menu");
                break;
             }
@@ -104,19 +115,6 @@ where
 
 
 
-pub fn read_char() -> std::io::Result<char> {
-   loop {
-      if let Ok(Event::Key(KeyEvent {
-         code: KeyCode::Char(c),
-         kind: KeyEventKind::Press,
-         modifiers: _,
-         state: _,
-      })) = event::read() {
-         return Ok(c);
-      }
-   }
-}
-
 pub fn buffer_size() -> std::io::Result<(u16, u16)> {
    terminal::size()
 }
@@ -133,7 +131,19 @@ pub enum InputField {
    OutputName
 }
 
-pub fn draw_pack_menu<W>(w:&mut W, screen_stack:&mut ScreenStack) -> std::io::Result<()>
+pub fn carat_blinker(sender: Sender<bool>) {
+   let mut visible = false;
+   loop {
+      thread::sleep(Duration::from_millis(500));
+      visible = !visible;
+      if let Err(_) = sender.send(visible) {
+         eprintln!("[-] Error: Failed To Send Carat Blinker Message");
+         break;
+      }
+   }
+}
+
+pub fn draw_pack_menu<W>(w:&mut W, screen_stack:&mut ScreenStack, recievers:&InteractiveTermRecievers) -> std::io::Result<()>
 where 
    W: io::Write, {
       
@@ -143,11 +153,16 @@ where
       let mut selection = 0;
       let mut cursor_pos = (0, 0);
       let mut input_dir = String::new();
-      let mut input_dir_editing = String::new();
       let mut output_name = String::new();
-      let mut output_name_editing = String::new();
+
+      
+      let mut cursor_visible = true;
 
       loop {
+
+         if let Ok(visible) = recievers.carat_blinker.try_recv() {
+            cursor_visible = visible;
+         } 
 
          queue!(w, 
             terminal::Clear(ClearType::All),
@@ -155,28 +170,35 @@ where
             cursor::MoveTo(0, 0),
          ).unwrap();
 
-         // So That We Have An Indicator Of What We Are Editing
-         if selection == 1 && input_mode == InputMode::Input(InputField::InputDir) {
-            input_dir_editing = " [EDITING]".to_string();
-            output_name_editing = "".to_string();
-         } else if selection == 2 && input_mode == InputMode::Input(InputField::OutputName){
-            output_name_editing = " [EDITING]".to_string();
-            input_dir_editing = "".to_string();
-         } else {
-            input_dir_editing = "".to_string();
-            output_name_editing = "".to_string();
-         }
+
+
+
 
          match selection {
             1 => {
-               queue!(w, style::PrintStyledContent(format!("=> Input Directory: {} {}", input_dir, input_dir_editing).blue()), cursor::MoveToNextLine(1)).unwrap();
+               queue!(w, 
+                  style::PrintStyledContent(format!("=> Input Directory: {}", input_dir).blue())).unwrap();
+               if cursor_visible && input_mode == InputMode::Input(InputField::InputDir) {
+                  queue!(w, style::PrintStyledContent("|".white())).unwrap();
+               } else {
+                  queue!(w, style::PrintStyledContent("".white())).unwrap();
+               }
+               queue!(w, cursor::MoveToNextLine(1)).unwrap();
+
                queue!(w, cursor::MoveRight(3), style::Print(format!("Output Name: {}", output_name)), cursor::MoveToNextLine(1)).unwrap();
                queue!(w, cursor::MoveRight(3), style::Print("Pack Assets"), cursor::MoveToNextLine(1)).unwrap();
                queue!(w, cursor::MoveRight(3), style::PrintStyledContent("Go Back".red()), cursor::MoveToNextLine(1)).unwrap();
             },
             2 => {
                queue!(w, cursor::MoveRight(3), style::Print(format!("Input Directory: {}", input_dir)), cursor::MoveToNextLine(1)).unwrap();
-               queue!(w, style::PrintStyledContent(format!("=> Output Name: {} {}", output_name, output_name_editing).blue()), cursor::MoveToNextLine(1)).unwrap();
+               queue!(w, 
+                  style::PrintStyledContent(format!("=> Output Name: {}", output_name).blue())).unwrap();
+               if cursor_visible && input_mode == InputMode::Input(InputField::OutputName) {
+                  queue!(w, style::PrintStyledContent("|".white())).unwrap();
+               } else {
+                  queue!(w, style::PrintStyledContent("".white())).unwrap();
+               }
+               queue!(w, cursor::MoveToNextLine(1)).unwrap();
                queue!(w, cursor::MoveRight(3), style::Print("Pack Assets"), cursor::MoveToNextLine(1)).unwrap();
                queue!(w, cursor::MoveRight(3), style::PrintStyledContent("Go Back".red()), cursor::MoveToNextLine(1)).unwrap();
             },
@@ -195,7 +217,14 @@ where
             _ =>{}
          }
 
-         queue!(w, cursor::MoveTo(0, buffer_size().unwrap().1 - 6), style::Print("__ DETAILS ___________________________________________")).unwrap();
+         // Calculate The Divider
+         let mut divider_text = String::from("__DETAILS");
+         let divider_length = divider_text.len() + (buffer_size().unwrap().0 as usize - (divider_text.len() * 2));
+         for _ in 0..divider_length {
+            divider_text.push('_');
+         }
+
+         queue!(w, cursor::MoveTo(0, buffer_size().unwrap().1 - 6), style::Print(divider_text)).unwrap();
 
          // Show Asset File Name & Manifest File Name + Path
          if output_name.len() > 0 {
@@ -209,7 +238,7 @@ where
 
          w.flush().unwrap();
 
-         if let Ok(Event::Key(event)) = event::read() {
+         if let Ok(Event::Key(event)) = recievers.event.try_recv() {
 
             match event.kind {
 
@@ -314,7 +343,7 @@ where
       }
 }
 
-pub fn draw_main_menu<W>(w: &mut W, screen_stack:&mut ScreenStack) -> std::io::Result<()>
+pub fn draw_main_menu<W>(w: &mut W, screen_stack:&mut ScreenStack, recievers:&InteractiveTermRecievers) -> std::io::Result<()>
 where 
    W: io::Write, {
    loop {
@@ -330,26 +359,39 @@ where
 
       w.flush().unwrap();
    
-      match read_char().unwrap() {
-         'p' => {
-            // Switch to pack state
-            screen_stack.push(MenuState::Pack);
-            break;
-         },
-         'u' => {
-            screen_stack.push(MenuState::Unpack);
-            break;
-         },
-         'l' => {
-            screen_stack.push(MenuState::List);
-            break;
-         },
-         'q' => {
-            execute!(w, cursor::SetCursorStyle::DefaultUserShape).unwrap();
-            screen_stack.push(MenuState::Exit);
-            break;
-         },
-         _ => {break;}
+      if let Ok(Event::Key(event)) = recievers.event.try_recv() {
+         match event.kind {
+            KeyEventKind::Release => {
+               match event.code {
+                  KeyCode::Char(c) => {
+                     match c {
+                        'p' => {
+                           // Switch to pack state
+                           screen_stack.push(MenuState::Pack);
+                           break;
+                        },
+                        'u' => {
+                           screen_stack.push(MenuState::Unpack);
+                           break;
+                        },
+                        'l' => {
+                           screen_stack.push(MenuState::List);
+                           break;
+                        },
+                        'q' => {
+                           execute!(w, cursor::SetCursorStyle::DefaultUserShape).unwrap();
+                           screen_stack.push(MenuState::Exit);
+                           break;
+                        },
+                        _ => {break;}
+                     };
+                  },
+                  _ => {}
+               }
+            },
+            _ => {}
+         }
+
       };
 
    }
